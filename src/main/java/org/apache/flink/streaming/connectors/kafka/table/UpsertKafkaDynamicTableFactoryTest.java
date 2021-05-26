@@ -38,7 +38,6 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 
@@ -100,21 +99,16 @@ public class UpsertKafkaDynamicTableFactoryTest implements DynamicTableSourceFac
         TableFactoryHelper helper = FactoryUtil.createTableFactoryHelper(this, KafkaOptions.autoCompleteSchemaRegistrySubject(context));
         ReadableConfig tableOptions = helper.getOptions();
 
-        KafkaDynamicSource triggerSource = null;
+        DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat = helper.discoverDecodingFormat(DeserializationFormatFactory.class, KafkaOptions.KEY_FORMAT);
+        DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat = helper.discoverDecodingFormat(DeserializationFormatFactory.class, KafkaOptions.VALUE_FORMAT);
+        helper.validateExcept(new String[]{"properties."});
         TableSchema schema = context.getCatalogTable().getSchema();
-
-        if (hasTrigger(tableOptions)) {
-            DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat = helper.discoverDecodingFormat(DeserializationFormatFactory.class, TRIGGER_KEY_FORMAT);
-            DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat = helper.discoverDecodingFormat(DeserializationFormatFactory.class, TRIGGER_VALUE_FORMAT);
-            helper.validateExcept(new String[]{"properties."});
-            validateSource(tableOptions, keyDecodingFormat, valueDecodingFormat, schema);
-            Tuple2<int[], int[]> keyValueProjections = this.createKeyValueProjections(context.getCatalogTable());
-            String keyPrefix = (String)tableOptions.getOptional(KafkaOptions.KEY_FIELDS_PREFIX).orElse(null);
-            Properties properties = KafkaOptions.getKafkaProperties(context.getCatalogTable().getOptions());
-            StartupMode earliest = StartupMode.EARLIEST;
-            triggerSource = new KafkaDynamicSource(schema.toPhysicalRowDataType(), keyDecodingFormat, new UpsertKafkaDynamicTableFactoryTest.DecodingFormatWrapper(valueDecodingFormat), (int[])keyValueProjections.f0, (int[])keyValueProjections.f1, keyPrefix, (List)tableOptions.get(TRIGGER_TOPIC), KafkaOptions.getSourceTopicPattern(tableOptions), properties, earliest, Collections.emptyMap(), 0L, true);
-        }
-
+        validateSource(tableOptions, keyDecodingFormat, valueDecodingFormat, schema);
+        Tuple2<int[], int[]> keyValueProjections = this.createKeyValueProjections(context.getCatalogTable());
+        String keyPrefix = (String)tableOptions.getOptional(KafkaOptions.KEY_FIELDS_PREFIX).orElse(null);
+        Properties properties = KafkaOptions.getKafkaProperties(context.getCatalogTable().getOptions());
+        StartupMode earliest = StartupMode.EARLIEST;
+        KafkaDynamicSource triggerSource = new KafkaDynamicSource(schema.toPhysicalRowDataType(), keyDecodingFormat, new UpsertKafkaDynamicTableFactoryTest.DecodingFormatWrapper(valueDecodingFormat), (int[])keyValueProjections.f0, (int[])keyValueProjections.f1, keyPrefix, (List)tableOptions.get(TRIGGER_TOPIC), KafkaOptions.getSourceTopicPattern(tableOptions), properties, earliest, Collections.emptyMap(), 0L, true);
 
         EncodingFormat<SerializationSchema<RowData>> keyEncodingFormat = helper.discoverEncodingFormat(SerializationFormatFactory.class, KafkaOptions.KEY_FORMAT);
         EncodingFormat<SerializationSchema<RowData>> valueEncodingFormat = helper.discoverEncodingFormat(SerializationFormatFactory.class, KafkaOptions.VALUE_FORMAT);
@@ -255,16 +249,5 @@ public class UpsertKafkaDynamicTableFactoryTest implements DynamicTableSourceFac
             SOURCE_CHANGELOG_MODE = ChangelogMode.newBuilder().addContainedKind(RowKind.UPDATE_AFTER).addContainedKind(RowKind.DELETE).build();
         }
     }
-
-    private boolean hasTrigger(final ReadableConfig tableOptions) {
-        Optional<List<String>> triggerTopic = tableOptions.getOptional(TRIGGER_TOPIC);
-        Optional<String> triggerBootstrapServers = tableOptions.getOptional(TRIGGER_PROPS_BOOTSTRAP_SERVERS);
-        Optional<String> triggerKeyFormat = tableOptions.getOptional(TRIGGER_KEY_FORMAT);
-        Optional<String> triggerValueFormat = tableOptions.getOptional(TRIGGER_VALUE_FORMAT);
-
-        return triggerTopic.isPresent()
-                && triggerBootstrapServers.isPresent()
-                && triggerKeyFormat.isPresent()
-                && triggerValueFormat.isPresent();
-    }
+    
 }
